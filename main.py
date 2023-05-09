@@ -52,7 +52,7 @@ class Main:
         summed_loss = 0
         summed_acc = 0
         
-        steps_till_test = 2
+        steps_till_test = 300
         for batch_idx, (data, target) in enumerate(train_loader):
 
             input = data
