@@ -7,7 +7,7 @@ from torch import nn, concatenate
 import torch
 import numpy as np
 import random
-
+import time
 from torch.utils.tensorboard import SummaryWriter
 
 MODEL_SAVE_PATH = expanduser('~/models/llm.pt')
@@ -20,6 +20,7 @@ class Main:
         self.token_depth = 32
         nr_heads = 8
         nr_vec_out = 1
+        self.batch_size = 100
         print('token_len', self.token_len)
         self.char_as_int = True
 
@@ -28,7 +29,7 @@ class Main:
         self.llm = LLM(self.token_len, self.token_depth, nr_heads, self.out_vec_len, nr_vec_out).cuda()
         self.llm.load_model(MODEL_SAVE_PATH)
         #Maximum learning rate is 0.00003. Max. weight decay is 0.00001
-        self.optimizer = Adam(self.llm.parameters(), lr=0.00001, weight_decay=0.01)
+        self.optimizer = Adam(self.llm.parameters(), lr=0.000031, weight_decay=0.01)
         self.loss = nn.CrossEntropyLoss()
         self.bin_loss = nn.BCELoss()
         self.tensorboard = SummaryWriter(expanduser('~/code/little_language_model/tensorboard'))
@@ -44,10 +45,9 @@ class Main:
 
 
     def train_epoch(self):
-        b_size = 100
-        train_loader = DataLoader(self.letter_loader, batch_size=b_size, shuffle=True, num_workers=0)
+        train_loader = DataLoader(self.letter_loader, batch_size=self.batch_size, shuffle=True, num_workers=0)
         test_data = LetterLoader(self.token_depth,nr_vec_out=1,set_type='test')
-        test_loader = DataLoader(test_data, batch_size=b_size,shuffle=True, num_workers=0)
+        test_loader = DataLoader(test_data, batch_size=self.batch_size,shuffle=True, num_workers=0)
 
         summed_loss = 0
         summed_acc = 0
@@ -73,7 +73,7 @@ class Main:
 
             target_char = target.argmax(dim=2)
             accuracy = (pred_char == target_char).sum().item() / \
-                (b_size * target.shape[1])
+                (self.batch_size * target.shape[1])
             summed_acc += accuracy
             summed_loss += loss.item()
             self.optimizer.step()
@@ -87,15 +87,12 @@ class Main:
                 test_len = int((40*summed_acc/steps_till_test)**2)
 
                 self.test_model( test_len)
-                avg_test_loss = self.get_avg_test_loss(test_loader)
-                print('average test loss: ', avg_test_loss)
-                self.tensorboard.add_scalar('test_loss', avg_test_loss, batch_idx)
-                self.tensorboard.add_scalar('train_loss', avg_train_loss, batch_idx)
-                self.tensorboard.add_scalar('char_acc', summed_acc/steps_till_test, batch_idx)
+                self.get_avg_test_loss(test_loader)
+                self.tensorboard.add_scalar('Loss/train', avg_train_loss, batch_idx)
+                self.tensorboard.add_scalar('char accuracy', summed_acc/steps_till_test, batch_idx)
                 summed_acc = 0
                 summed_loss = 0
-                
-
+            
 
             self.tensorboard.add_scalar('loss', summed_loss, batch_idx)
 
@@ -103,6 +100,7 @@ class Main:
         """Get the loss of the model on the test set"""
         summed_loss = 0
         self.llm.eval()
+        max_test_runs = 20
 
         for batch_idx, (data, target) in enumerate(test_loader):
             input = data
@@ -111,11 +109,12 @@ class Main:
             loss = self.loss(out.reshape(-1, self.out_vec_len),
                              target.cuda().reshape(-1, self.out_vec_len))
             summed_loss += loss.item()
-            if batch_idx > 10:
+            if batch_idx > max_test_runs:
                 break
-        averaged_loss = summed_loss / len(test_loader)
-        
-        return averaged_loss
+        averaged_loss = summed_loss / (max_test_runs)
+        self.tensorboard.add_scalar('Loss/test', averaged_loss, batch_idx)
+        print('average test loss: ', averaged_loss)
+
     
     def test_model(self,  test_len):
         """Test the model by starting to give a sample input 
@@ -136,7 +135,7 @@ class Main:
 
             data_out_m = self.llm(input_enc).detach().cpu()
             char_probs = torch.functional.F.softmax(data_out_m[0,0],dim=0).numpy()
-            char_probs = char_probs.round(1) #Cut off anyhting below 0.1
+            # char_probs = char_probs.round(1) #Cut off anyhting below 0.1
             new_char = random.choices(ALPHABET[:-1], weights=list(char_probs), k=1)
             # indx, _ = self.letter_loader.vec_to_char(data_out_m)
             indx=ALPHABET.index(new_char[0])

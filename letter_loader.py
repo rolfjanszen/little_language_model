@@ -22,7 +22,7 @@ class LetterLoader(Dataset):
         super().__init__()
         self.context_len = token_len
         self.nr_vec_out = nr_vec_out
-        with open(LITTLE_SHAKESPEAR_PATH, 'r') as f:
+        with open(LEWIS_CARROL_PATH, 'r') as f:
             text = f.read().lower()
         # Make sure the text is long enough to be split into batches
         correct_len = MIN_TEXT_LEN/len(text)
