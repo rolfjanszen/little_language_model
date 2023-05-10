@@ -5,6 +5,7 @@ from llm import LLM
 from torch.optim import Adam
 from torch import nn, concatenate
 import torch
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 import random
 import time
@@ -29,7 +30,7 @@ class Main:
         self.llm = LLM(self.token_len, self.token_depth, nr_heads, self.out_vec_len, nr_vec_out).cuda()
         self.llm.load_model(MODEL_SAVE_PATH)
         #Maximum learning rate is 0.00003. Max. weight decay is 0.00001
-        self.optimizer = Adam(self.llm.parameters(), lr=0.000031, weight_decay=0.01)
+        self.optimizer = Adam(self.llm.parameters(), lr=0.00004, weight_decay=0.0003)
         self.loss = nn.CrossEntropyLoss()
         self.bin_loss = nn.BCELoss()
         self.tensorboard = SummaryWriter(expanduser('~/code/little_language_model/tensorboard'))
@@ -45,13 +46,14 @@ class Main:
 
 
     def train_epoch(self):
-        train_loader = DataLoader(self.letter_loader, batch_size=self.batch_size, shuffle=True, num_workers=0)
+        train_loader = DataLoader(self.letter_loader, batch_size=self.batch_size, shuffle=True, num_workers=12)
         test_data = LetterLoader(self.token_depth,nr_vec_out=1,set_type='test')
         test_loader = DataLoader(test_data, batch_size=self.batch_size,shuffle=True, num_workers=0)
 
         summed_loss = 0
         summed_acc = 0
-        
+        scheduler = ReduceLROnPlateau(self.optimizer, 'min' , factor=0.5,patience=10, threshold=0.00001, 
+                                      threshold_mode='rel', cooldown=0, min_lr=0.00001, eps=1e-08, verbose=False)
         steps_till_test = 300
         for batch_idx, (data, target) in enumerate(train_loader):
 
@@ -82,7 +84,12 @@ class Main:
                 avg_train_loss = summed_loss / steps_till_test
                 print('average train loss:', avg_train_loss)
                 print('average char accuracy: ', summed_acc/steps_till_test)
-
+                scheduler.step(avg_train_loss)
+                #Get learning rate from optimizer
+                optim_lr = self.optimizer.param_groups[0]['lr']
+                print('optim lr',optim_lr)
+                self.tensorboard.add_scalar('learning rate', optim_lr, batch_idx)
+                
                 self.llm.save_model(MODEL_SAVE_PATH)
                 test_len = int((40*summed_acc/steps_till_test)**2)
 
@@ -135,8 +142,12 @@ class Main:
 
             data_out_m = self.llm(input_enc).detach().cpu()
             char_probs = torch.functional.F.softmax(data_out_m[0,0],dim=0).numpy()
-            # char_probs = char_probs.round(1) #Cut off anyhting below 0.1
+            if char_probs.max() > 0.1:
+                char_probs = char_probs.round(1) #Cut off anyhting below 0.1
             new_char = random.choices(ALPHABET[:-1], weights=list(char_probs), k=1)
+            # best_indx = char_probs.argmax()
+
+            # new_char = [ALPHABET[best_indx]]
             # indx, _ = self.letter_loader.vec_to_char(data_out_m)
             indx=ALPHABET.index(new_char[0])
             indx_len = 1#len(indx[0])

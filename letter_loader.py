@@ -6,7 +6,7 @@ import numpy as np
 import random
 
 ALPHABET = "abcdefghijklmnopqrstuvwxyz .,:'?!#-¬"
-LITTLE_SHAKESPEAR_PATH = expanduser('~/data/little_shakespear.txt')
+LITTLE_SHAKESPEARE_PATH = expanduser('~/data/little_shakespeare.txt')
 file_loc = dirname(realpath(__file__))
 LEWIS_CARROL_PATH = join(file_loc, 'lewis_carrol.txt')
 MIN_TEXT_LEN = 1000000
@@ -16,13 +16,13 @@ TRAIN_TEST_SPLIT = 0.9
 class LetterLoader(Dataset):
     """Load text data and return batches of input words represented as ints correxponding to their 
     location in the alphabet and target one hot vectors"""
-    balance_prop = 0.4
+    balance_prop = 0.15
 
     def __init__(self, token_len, nr_vec_out, set_type='train') -> None:
         super().__init__()
         self.context_len = token_len
         self.nr_vec_out = nr_vec_out
-        with open(LITTLE_SHAKESPEAR_PATH, 'r') as f:
+        with open(LITTLE_SHAKESPEARE_PATH, 'r') as f:
             text = f.read().lower()
         # Make sure the text is long enough to be split into batches
         correct_len = MIN_TEXT_LEN/len(text)
